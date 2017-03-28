@@ -4,6 +4,22 @@
  * Martin Kepplinger <martin.kepplinger@ginzinger.com>  2016-09-14
  * Melchior FRANZ <melchior.franz@ginzinger.com>  2015-09-30
  *
+ * This file is part of tslib.
+ *
+ * ts_uinput is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * ts_uinput is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ts_uinput.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *
  * ts_uinput daemon to generate (single- and multitouch) input events
  * taken from tslib multitouch samples.
  */
@@ -476,13 +492,13 @@ int main(int argc, char **argv)
 
 	while (1) {
 		const struct option long_options[] = {
-			{ "help",         no_argument,       0, 'h' },
-			{ "name",         required_argument, 0, 'n' },
-			{ "verbose",      no_argument,       0, 'v' },
-			{ "daemonize",    no_argument,       0, 'd' },
-			{ "idev",         required_argument, 0, 'i' },
-			{ "fbdev",        required_argument, 0, 'f' },
-			{ "slots",        required_argument, 0, 's' },
+			{ "help",         no_argument,       NULL, 'h' },
+			{ "name",         required_argument, NULL, 'n' },
+			{ "verbose",      no_argument,       NULL, 'v' },
+			{ "daemonize",    no_argument,       NULL, 'd' },
+			{ "idev",         required_argument, NULL, 'i' },
+			{ "fbdev",        required_argument, NULL, 'f' },
+			{ "slots",        required_argument, NULL, 's' },
 		};
 
 		int option_index = 0;

@@ -18,9 +18,13 @@
 
 #include "tslib-private.h"
 
+#if defined (WIN32) || (__HAIKU__)
+#include "ts_strsep.h"
+#endif
+
 #define BUF_SIZE 1024
 
-char s_holder[BUF_SIZE];
+static char s_holder[BUF_SIZE];
 
 int tslib_parse_vars(struct tslib_module_info *mod,
 		     const struct tslib_vars *vars, int nr,
@@ -36,7 +40,11 @@ int tslib_parse_vars(struct tslib_module_info *mod,
 	s_holder[BUF_SIZE - 1] = '\0';
 
 	s = s_holder;
+#if defined (WIN32) || (__HAIKU__)
+	while ((p = ts_strsep(&s, " \t")) != NULL && ret == 0) {
+#else
 	while ((p = strsep(&s, " \t")) != NULL && ret == 0) {
+#endif
 		const struct tslib_vars *v;
 		char *eq;
 

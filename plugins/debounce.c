@@ -1,7 +1,7 @@
 /*
  *  tslib/plugins/debounce.c
  *
- *  Copyright (C) 2016 Martin Kepplinger <martin.kepplinger@ginzinger.com>
+ *  Copyright (C) 2017 Martin Kepplinger <martin.kepplinger@ginzinger.com>
  *  Copyright (C) 2013 Melchior FRANZ <melchior.franz@ginzinger.com>
  *
  * This file is placed under the LGPL.  Please see the file
@@ -32,9 +32,9 @@
 struct tslib_debounce {
 	struct tslib_module_info	module;
 	unsigned int			drop_threshold; /* ms */
-	unsigned long long		last_release;
+	long long			last_release;
 	int				last_pressure;
-	unsigned long long		*last_release_mt;
+	long long			*last_release_mt;
 	int				*last_pressure_mt;
 	int				current_max_slots;
 };
@@ -46,8 +46,8 @@ static int debounce_read(struct tslib_module_info *info, struct ts_sample *samp,
 	int ret;
 	int num = 0;
 	int i;
-	unsigned long long now;
-	unsigned long dt;
+	long long now;
+	long dt;
 	__attribute__ ((unused)) enum { DOWN, MOVE, UP } mode;
 	int drop = 0;
 	int left;
@@ -58,7 +58,7 @@ static int debounce_read(struct tslib_module_info *info, struct ts_sample *samp,
 
 	for (s = samp, i = 0; i < ret; i++, s++) {
 		now = s->tv.tv_sec * 1e6 + s->tv.tv_usec;
-		dt = (unsigned long)(now - p->last_release) / 1000; /* ms */
+		dt = (long)(now - p->last_release) / 1000; /* ms */
 		mode = MOVE;
 
 		if (!s->pressure) {
@@ -76,7 +76,7 @@ static int debounce_read(struct tslib_module_info *info, struct ts_sample *samp,
 		}
 
 #ifdef DEBUG
-		fprintf(stderr, "\033[%smtslib/debounce:\033[m  press=%u  x=%d  y=%d  dt=%ld%s\n",
+		fprintf(stderr, "\033[%smDEBOUNCE:\033[m  press=%u  x=%d  y=%d  dt=%ld%s\n",
 				mode == DOWN ? "92" : mode == MOVE ? "32" : "93",
 				s->pressure, s->x, s->y, dt,
 				drop ? "  \033[31mdropped\033[m" : "");
@@ -102,8 +102,8 @@ static int debounce_read_mt(struct tslib_module_info *info, struct ts_sample_mt 
 {
 	struct tslib_debounce *p = (struct tslib_debounce *)info;
 	int ret;
-	unsigned long long now;
-	unsigned long dt;
+	long long now;
+	long dt;
 	__attribute__ ((unused)) enum { DOWN, MOVE, UP } mode[max_slots];
 	int drop = 0;
 	int nr;
@@ -113,7 +113,7 @@ static int debounce_read_mt(struct tslib_module_info *info, struct ts_sample_mt 
 		if (p->last_release_mt)
 			free(p->last_release_mt);
 
-		p->last_release_mt = calloc(max_slots, sizeof(unsigned long long));
+		p->last_release_mt = calloc(max_slots, sizeof(long long));
 		if (!p->last_release_mt)
 			return -ENOMEM;
 
@@ -145,7 +145,7 @@ static int debounce_read_mt(struct tslib_module_info *info, struct ts_sample_mt 
 				continue;
 
 			now = samp[nr][i].tv.tv_sec * 1e6 + samp[nr][i].tv.tv_usec;
-			dt = (unsigned long)(now - p->last_release_mt[i]) / 1000; /* ms */
+			dt = (long)(now - p->last_release_mt[i]) / 1000; /* ms */
 			mode[i] = MOVE;
 
 			if (!samp[nr][i].pressure) {
@@ -163,9 +163,10 @@ static int debounce_read_mt(struct tslib_module_info *info, struct ts_sample_mt 
 			}
 
 	#ifdef DEBUG
-			fprintf(stderr, "\033[%smtslib/debounce:\033[m  press=%u  x=%d  y=%d  dt=%ld%s\n",
+			fprintf(stderr, "\033[%smDEBOUNCE:\033[m (slot %d) P:%u X:%4d  Y:%4d  dt=%ld%s\n",
 					mode[i] == DOWN ? "92" : mode[i] == MOVE ? "32" : "93",
-					samp[nr][i].pressure, samp[nr][i].x, samp[nr][i].y, dt,
+					samp[nr][i].slot, samp[nr][i].pressure,
+					samp[nr][i].x, samp[nr][i].y, dt,
 					drop ? "  \033[31mdropped\033[m" : "");
 	#endif
 
@@ -248,11 +249,6 @@ TSAPI struct tslib_module_info *debounce_mod_init(__attribute__ ((unused)) struc
 		free(p);
 		return NULL;
 	}
-
-#ifdef DEBUG
-	fprintf(stderr, "tslib/debounce: drop_threshold=%u\n",
-				p->drop_threshold);
-#endif
 
 	return &p->module;
 }

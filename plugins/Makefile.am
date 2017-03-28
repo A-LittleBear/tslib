@@ -59,6 +59,12 @@ else
 SKIP_MODULE =
 endif
 
+if ENABLE_IIR_MODULE
+IIR_MODULE = iir.la
+else
+IIR_MODULE =
+endif
+
 if ENABLE_UCB1X00_MODULE
 UCB1X00_MODULE = ucb1x00.la
 else
@@ -152,6 +158,7 @@ pluginexec_LTLIBRARIES = \
 	$(PTHRES_MODULE) \
 	$(DEBOUNCE_MODULE) \
 	$(SKIP_MODULE) \
+	$(IIR_MODULE) \
 	$(UCB1X00_MODULE) \
 	$(CORGI_MODULE) \
 	$(COLLIE_MODULE) \
@@ -169,31 +176,66 @@ pluginexec_LTLIBRARIES = \
   
 variance_la_SOURCES	= variance.c
 variance_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+variance_la_LDFLAGS	+= -no-undefined
+endif
 variance_la_LIBADD	= $(top_builddir)/src/libts.la
   
 median_la_SOURCES	= median.c
 median_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+median_la_LDFLAGS	+= -no-undefined
+endif
 median_la_LIBADD	= $(top_builddir)/src/libts.la
 
 dejitter_la_SOURCES	= dejitter.c
 dejitter_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+dejitter_la_LDFLAGS	+= -no-undefined
+endif
 dejitter_la_LIBADD	= $(top_builddir)/src/libts.la
   
 linear_la_SOURCES	= linear.c
 linear_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+linear_la_LDFLAGS	+= -no-undefined
+endif
 linear_la_LIBADD	= $(top_builddir)/src/libts.la
 
 pthres_la_SOURCES	= pthres.c
 pthres_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+pthres_la_LDFLAGS	+= -no-undefined
+endif
 pthres_la_LIBADD	= $(top_builddir)/src/libts.la
 
 debounce_la_SOURCES	= debounce.c
 debounce_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+debounce_la_LDFLAGS	+= -no-undefined
+endif
 debounce_la_LIBADD	= $(top_builddir)/src/libts.la
 
 skip_la_SOURCES		= skip.c
 skip_la_LDFLAGS		= -module $(LTVSN)
+if WINDOWS
+skip_la_LDFLAGS		+= -no-undefined
+endif
 skip_la_LIBADD		= $(top_builddir)/src/libts.la
+
+linear_h2200_la_SOURCES	= linear-h2200.c
+linear_h2200_la_LDFLAGS	= -module $(LTVSN)
+if WINDOWS
+linear_h2200_la_LDFLAGS	+= -no-undefined
+endif
+linear_h2200_la_LIBADD	= $(top_builddir)/src/libts.la
+
+iir_la_SOURCES		= iir.c
+iir_la_LDFLAGS		= -module $(LTVSN)
+if WINDOWS
+iir_la_LDFLAGS		+= -no-undefined
+endif
+iir_la_LIBADD		= $(top_builddir)/src/libts.la
 
 # hw access
 corgi_la_SOURCES	= corgi-raw.c
@@ -231,11 +273,9 @@ galax_la_LIBADD = $(top_builddir)/src/libts.la
 touchkit_la_SOURCES	= touchkit-raw.c
 touchkit_la_LDFLAGS	= -module $(LTVSN)
 
-linear_h2200_la_SOURCES	= linear-h2200.c
-linear_h2200_la_LDFLAGS	= -module $(LTVSN)
-
-cy8mrln_palmpre_la_SOURCES = cy8mrln-palmpre.c
+cy8mrln_palmpre_la_SOURCES = cy8mrln-palmpre.c cy8mrln.h
 cy8mrln_palmpre_la_LDFLAGS = -module $(LTVSN)
+cy8mrln_palmpre_la_LIBADD  = $(top_builddir)/src/libts.la
 
 waveshare_la_SOURCES	= waveshare-raw.c
 waveshare_la_LDFLAGS	= -module $(LTVSN)

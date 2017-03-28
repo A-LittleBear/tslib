@@ -3,14 +3,24 @@
  *
  *  Copyright (C) 2016 Martin Kepplinger
  *
- * This file is placed under the GPL.  Please see the file
- * COPYING for more details.
+ * This file is part of tslib.
+ *
+ * ts_test_mt is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * ts_test_mt is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ts_test_mt.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- * Basic multitouch test program for touchscreen library.
+ * Basic multitouch test program for the libts library.
  */
-#include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,10 +33,16 @@
 #include <unistd.h>
 #include <getopt.h>
 
-#ifdef __FreeBSD__
+#if defined (__FreeBSD__)
+
 #include <dev/evdev/input.h>
-#else
+#define TS_HAVE_EVDEV
+
+#elif defined (__linux__)
+
 #include <linux/input.h>
+#define TS_HAVE_EVDEV
+
 #endif
 
 #include "tslib.h"
@@ -37,6 +53,9 @@
 #include <SDL2/SDL.h>
 #else
 #include "fbutils.h"
+
+#ifndef ABS_MT_SLOT /* < 2.6.36 kernel headers */
+# define ABS_MT_SLOT             0x2f    /* MT slot being modified */
 #endif
 
 static int palette[] =
@@ -81,6 +100,8 @@ static void refresh_screen()
 
 static void help()
 {
+	printf("tslib " PACKAGE_VERSION "\n");
+	printf("\n");
 	printf("Usage: ts_test_mt [-v] [-i <device>]\n");
 }
 
@@ -93,7 +114,9 @@ int main(int argc, char **argv)
 	unsigned int mode = 0;
 	unsigned int *mode_mt = NULL;
 	int quit_pressed = 0;
+#ifdef TS_HAVE_EVDEV
 	struct input_absinfo slot;
+#endif
 	unsigned short max_slots = 1;
 	struct ts_sample_mt **samp_mt = NULL;
 	short verbose = 0;
@@ -116,9 +139,9 @@ int main(int argc, char **argv)
 
 	while (1) {
 		const struct option long_options[] = {
-			{ "help",         no_argument,       0, 'h' },
-			{ "verbose",      no_argument,       0, 'v' },
-			{ "idev",         required_argument, 0, 'i' },
+			{ "help",         no_argument,       NULL, 'h' },
+			{ "verbose",      no_argument,       NULL, 'v' },
+			{ "idev",         required_argument, NULL, 'i' },
 		};
 
 		int option_index = 0;
@@ -160,7 +183,7 @@ int main(int argc, char **argv)
 	}
 	if (verbose && tsdevice)
 		printf("ts_test_mt: using input device " GREEN "%s" RESET "\n", tsdevice);
-
+#ifdef TS_HAVE_EVDEV
 	if (ioctl(ts_fd(ts), EVIOCGABS(ABS_MT_SLOT), &slot) < 0) {
 		perror("ioctl EVIOGABS");
 		ts_close(ts);
@@ -168,6 +191,10 @@ int main(int argc, char **argv)
 	}
 
 	max_slots = slot.maximum + 1 - slot.minimum;
+#else
+	/* random maximum in case don't know */
+	max_slots = 11;
+#endif
 
 	samp_mt = malloc(sizeof(struct ts_sample_mt *));
 	if (!samp_mt) {

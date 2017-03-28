@@ -95,25 +95,21 @@ static int linear_read_mt(struct tslib_module_info *info,
 	int nr;
 
 	ret = info->next->ops->read_mt(info->next, samp, max_slots, nr_samples);
-	if (ret < 0) {
-	#ifdef DEBUG
-		fprintf(stderr, "linear: couldn't read a sample\n");
-	#endif /*DEBUG*/
+	if (ret < 0)
 		return ret;
-	}
 
 	for (nr = 0; nr < ret; nr++) {
 	#ifdef DEBUG
-		printf("LINEAR: read %d samples (mem: %d nr x %d slots)\n",
+		printf("LINEAR:   read %d samples (mem: %d nr x %d slots)\n",
 		       ret, nr_samples, max_slots);
-		fprintf(stderr, "BEFORE CALIB-----------------------v\n");
+		fprintf(stderr, "BEFORE CALIB:\n");
 	#endif /*DEBUG*/
 		for (i = 0; i < max_slots; i++) {
 			if (samp[nr][i].valid != 1)
 				continue;
 
 		#ifdef DEBUG
-			fprintf(stderr, "          slot %d            %d %d %d\n",
+			fprintf(stderr, "          (slot %d) X:%4d Y:%4d P:%d\n",
 				i, samp[nr][i].x, samp[nr][i].y,
 				samp[nr][i].pressure);
 		#endif /*DEBUG*/

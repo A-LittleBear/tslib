@@ -18,6 +18,9 @@ lib_LTLIBRARIES  = libts.la
 libts_la_SOURCES = ts_attach.c ts_close.c ts_config.c ts_error.c \
 		   ts_fd.c ts_load_module.c ts_open.c ts_parse_vars.c \
 		   ts_read.c ts_read_raw.c ts_option.c ts_setup.c $(srcdir)/../plugins/plugins.h
+if WINDOWS
+libts_la_SOURCES += ts_strsep.c ts_strsep.h
+endif
 
 if ENABLE_STATIC_LINEAR_MODULE
 libts_la_SOURCES += $(top_srcdir)/plugins/linear.c
@@ -83,9 +86,16 @@ if ENABLE_STATIC_SKIP_MODULE
 libts_la_SOURCES += $(top_srcdir)/plugins/skip.c
 endif
 
+if ENABLE_STATIC_IIR_MODULE
+libts_la_SOURCES += $(top_srcdir)/plugins/iir.c
+endif
+
 if ENABLE_STATIC_WAVESHARE_MODULE
 libts_la_SOURCES += $(top_srcdir)/plugins/waveshare-raw.c
 endif
 
 libts_la_LDFLAGS = -version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) \
 		   -export-dynamic
+if WINDOWS
+libts_la_LDFLAGS += -no-undefined
+endif

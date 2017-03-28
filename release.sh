@@ -6,17 +6,14 @@
 # you should have received as part of this distribution.
 
 # Script to build release-archives with. This requires a checkout from git.
-# If you really do a release, be sure to be on a newly created release/X.X
-# branch.
 
 # WARNING: This script is very dangerous! It may delete any untracked files.
 
 have_version=0
-sign=0
 
 usage()
 {
-        echo "Usage: $0 [-s] -v version"
+        echo "Usage: $0 -v version"
 }
 
 args=$(getopt -o v:s -- "$@")
@@ -33,16 +30,12 @@ do
                 have_version=1
                 shift
                 ;;
-        -s)
-                sign=1
-                shift
-                ;;
         --)
                 shift
                 break
                 ;;
         *)
-                perr "Invalid option: $1"
+                echo "Invalid option: $1"
                 usage
                 exit 1
                 ;;
@@ -68,35 +61,41 @@ else
        exit 1
 fi
 
-# Check that we are on a release branch
+# Check that we are on master
 branch=$(git rev-parse --abbrev-ref HEAD)
 echo "we are on branch $branch"
 
-if [ ! "${branch}" = "release/${version}" ] ; then
-	echo "you don't seem to be on the release branch"
+if [ ! "${branch}" = "master" ] ; then
+	echo "you don't seem to be on the master branch"
 	exit 1
 fi
+
+if git diff-index --quiet HEAD --; then
+	# no changes
+	echo "there are no uncommitted changes (version bump)"
+	exit 1
+fi
+echo "======================================================"
+echo "    are you fine with the following version bump?"
+echo "======================================================"
+git diff
+echo "======================================================"
+read -p "           Press enter to continue"
+echo "======================================================"
 
 ./autogen.sh && ./configure && make distcheck
 ./configure --disable-dependency-tracking && make distclean && ./autogen-clean.sh
 git clean -d -f
-mv release.gitignore .gitignore
-./autogen.sh
-git add .
-git commit -m "add generated files for ${version}"
 
-if [ "$sign" -gt 0 ] ; then
-       git tag -s ${version}
-fi
+git commit -a -m "tslib ${version}"
+git tag -s ${version} -m "tslib ${version}"
 
-./configure && make dist
+./autogen.sh && ./configure && make distcheck
 sha256sum tslib-${version}.tar.xz > tslib-${version}.tar.xz.sha256
 sha256sum tslib-${version}.tar.gz > tslib-${version}.tar.gz.sha256
 sha256sum tslib-${version}.tar.bz2 > tslib-${version}.tar.bz2.sha256
 
-if [ "$sign" -gt 0 ] ; then
-       gpg -b -a tslib-${version}.tar.xz
-       gpg -b -a tslib-${version}.tar.gz
-       gpg -b -a tslib-${version}.tar.bz2
-fi
+gpg -b -a tslib-${version}.tar.xz
+gpg -b -a tslib-${version}.tar.gz
+gpg -b -a tslib-${version}.tar.bz2
 

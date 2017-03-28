@@ -10,7 +10,6 @@
  * Read the configuration and load the appropriate drivers.
  */
 #include "config.h"
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,6 +17,10 @@
 #include <unistd.h>
 #endif
 #include <dlfcn.h>
+
+#if defined (WIN32) || (__HAIKU__)
+#include "ts_strsep.h"
+#endif
 
 #include "tslib-private.h"
 
@@ -29,10 +32,15 @@
 /* Discard any empty tokens
  * Note: strsep modifies p (see man strsep)
  */
-void discard_null_tokens(char **p, char **tokPtr)
+static void discard_null_tokens(char **p, char **tokPtr)
 {
-	while (*p != NULL && **tokPtr == '\0')
+	while (*p != NULL && **tokPtr == '\0') {
+	#if defined (WIN32) || (__HAIKU__)
+		*tokPtr = ts_strsep(p, "\t");
+	#else
 		*tokPtr = strsep(p, " \t");
+	#endif
+	}
 }
 
 int ts_config(struct tsdev *ts)
@@ -83,7 +91,11 @@ int ts_config(struct tsdev *ts)
 			break;
 		}
 
+	#if defined (WIN32) || (__HAIKU__)
+		tok = ts_strsep(&p, " \t");
+	#else
 		tok = strsep(&p, " \t");
+	#endif
 		discard_null_tokens(&p, &tok);
 
 		/* Ignore comments or blank lines.
@@ -94,11 +106,19 @@ int ts_config(struct tsdev *ts)
 
 		/* Search for the option. */
 		if (strcasecmp(tok, "module") == 0) {
+		#if defined (WIN32) || (__HAIKU__)
+			module_name = ts_strsep(&p, " \t");
+		#else
 			module_name = strsep(&p, " \t");
+		#endif
 			discard_null_tokens(&p, &module_name);
 			ret = ts_load_module(ts, module_name, p);
 		} else if (strcasecmp(tok, "module_raw") == 0) {
+		#if defined (WIN32) || (__HAIKU__)
+			module_name = ts_strsep(&p, " \t");
+		#else
 			module_name = strsep(&p, " \t");
+		#endif
 			discard_null_tokens(&p, &module_name);
 			ret = ts_load_module_raw(ts, module_name, p);
 		} else {

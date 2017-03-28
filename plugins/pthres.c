@@ -148,7 +148,7 @@ static int pthres_read_mt(struct tslib_module_info *info,
 		return ret;
 
 #ifdef DEBUG
-	printf("PTHRES: read %d samples (mem: %d nr x %d slots\n",
+	printf("PTHRES:   read %d samples (mem: %d nr x %d slots)\n",
 	       ret, nr_samples, max_slots);
 #endif
 
@@ -158,7 +158,7 @@ static int pthres_read_mt(struct tslib_module_info *info,
 				continue;
 
 			if (samp[i][j].pressure < p->pmin) {
-				if (p->press != 0) {
+				if (p->press[j] != 0) {
 					/* release */
 					p->press[j] = 0;
 					samp[i][j].pressure = 0;
