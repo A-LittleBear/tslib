@@ -25,8 +25,8 @@ Visit the [tslib website](http://tslib.org) for an overview of the project.
 
 ## setup and configure tslib
 ### install tslib
-tslib should be usable on various operating systems, including GNU/Linux,
-Freebsd or Android/Linux. See [building tslib](#building-tslib) for details.
+tslib runs on various operating systems, including GNU/Linux,
+FreeBSD or Android/Linux. See [building tslib](#building-tslib) for details.
 Apart from building the latest tarball release, running
 `./configure`, `make` and `make install`, tslib is available from the following
 distributors and their package management:
@@ -98,22 +98,20 @@ You need a tool using tslib'd API and provide it to your input system. There are
 various ways to do so on various systems. We only describe one way for Linux
 here - using tslib's included userspace input evdev driver `ts_uinput`:
 
-    # ts_uinput -d
+    # ts_uinput -d -v
 
-`-d` makes the program return and run as a daemon in the background. Inside of
-`/dev/input/` there now is a new input event device, which provides your
-configured input. You can even use a script like `tools/ts_uinput_start.sh` to
-start the ts_uinput daemon and create a defined `/dev/input/ts_uinput` symlink.
+`-d` makes the program return and run as a daemon in the background. `-v` make
+it print the new `/dev/input/eventX` device node before returning.
 
 In this case, for Qt5 for example you'd probably set something like this:
 
-    QT_QPA_GENERIC_PLUGINS=evdevtouch:/dev/input/ts_uinput
-    QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/ts_uinput:rotate=0
+    QT_QPA_GENERIC_PLUGINS=evdevtouch:/dev/input/eventX
+    QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/eventX:rotate=0
 
 For X11 you'd probably edit your `xorg.conf` `Section "InputDevice"` for your
 touchscreen to have
 
-    Option "Device" "/dev/input/ts_uinput"
+    Option "Device" "/dev/input/eventX"
 
 and so on. Please see your system's documentation on how to use a specific
 evdev input device.
@@ -346,7 +344,7 @@ functions above to it.
 [Wikipedia](https://en.wikipedia.org/wiki/Application_binary_interface) has
 background information.
 
-#### Soname versions
+#### libts Soname versions
 Usually, and every time until now, libts does not break the ABI and your
 application can continue using libts after upgrading. Specifically this is
 indicated by the libts library version's major number, which should always stay
@@ -363,9 +361,13 @@ increase with releases. In the following example
 use `libts.so` for using tslib unconditionally and `libts.so.0` to make sure
 your current application never breaks.
 
+If a release includes changes like added features, the second number is
+incremented and the third is set to zero. If a release includes mostly just
+bugfixes, only the third number is incremented.
+
 #### tslib package version
-Officially, a tslib tarball version number doesn't tell you anything about it's
-backwards compatibility.
+A tslib tarball version number doesn't tell you anything about it's backwards
+compatibility.
 
 ### dependencies
 
@@ -389,20 +391,13 @@ This is a complete example program, similar to `ts_print_mt.c`:
     #include <stdio.h>
     #include <stdlib.h>
     #include <fcntl.h>
-    #include <sys/ioctl.h>
-    #include <sys/mman.h>
     #include <sys/time.h>
-    #include <getopt.h>
-    #include <errno.h>
     #include <unistd.h>
 
-    #ifdef __FreeBSD__
-    #include <dev/evdev/input.h>
-    #else
-    #include <linux/input.h>
-    #endif
-
     #include "tslib.h"
+
+    #define SLOTS 5
+    #define SAMPLES 1
 
     int main(int argc, char **argv)
     {
@@ -411,56 +406,53 @@ This is a complete example program, similar to `ts_print_mt.c`:
         struct ts_sample_mt **samp_mt = NULL;
         struct input_absinfo slot;
         unsigned short max_slots = 1;
-        int ret, i;
+        unsigned short read_samples = 1;
+        int ret, i, j;
 
         ts = ts_setup(tsdevice, 0);
         if (!ts) {
                 perror("ts_setup");
-                return errno;
+                return -1;
         }
 
-        if (ioctl(ts_fd(ts), EVIOCGABS(ABS_MT_SLOT), &slot) < 0) {
-                perror("ioctl EVIOGABS");
-                ts_close(ts);
-                return errno;
-        }
+        max_slots = SLOTS;
+        read_samples = SAMPLES;
 
-        max_slots = slot.maximum + 1 - slot.minimum;
-
-        samp_mt = malloc(sizeof(struct ts_sample_mt *));
+        samp_mt = malloc(read_samples * sizeof(struct ts_sample_mt *));
         if (!samp_mt) {
                 ts_close(ts);
                 return -ENOMEM;
         }
-        samp_mt[0] = calloc(max_slots, sizeof(struct ts_sample_mt));
-        if (!samp_mt[0]) {
-                free(samp_mt);
-                ts_close(ts);
-                return -ENOMEM;
+        for (i = 0; i < read_samples; i++) {
+                samp_mt[i] = calloc(max_slots, sizeof(struct ts_sample_mt));
+                if (!samp_mt[i]) {
+                        free(samp_mt);
+                        ts_close(ts);
+                        return -ENOMEM;
+                }
         }
 
         while (1) {
-                ret = ts_read_mt(ts, samp_mt, max_slots, 1);
+                ret = ts_read_mt(ts, samp_mt, max_slots, read_samples);
                 if (ret < 0) {
                         perror("ts_read_mt");
                         ts_close(ts);
                         exit(1);
                 }
 
-                if (ret != 1)
-                        continue;
+                for (j = 0; j < ret; j++) {
+                	for (i = 0; i < max_slots; i++) {
+				if (samp_mt[j][i].valid != 1)
+					continue;
 
-                for (i = 0; i < max_slots; i++) {
-                        if (samp_mt[0][i].valid != 1)
-                                continue;
-
-                        printf("%ld.%06ld: (slot %d) %6d %6d %6d\n",
-                               samp_mt[0][i].tv.tv_sec,
-                               samp_mt[0][i].tv.tv_usec,
-                               samp_mt[0][i].slot,
-                               samp_mt[0][i].x,
-                               samp_mt[0][i].y,
-                               samp_mt[0][i].pressure);
+				printf("%ld.%06ld: (slot %d) %6d %6d %6d\n",
+				       samp_mt[j][i].tv.tv_sec,
+				       samp_mt[j][i].tv.tv_usec,
+				       samp_mt[j][i].slot,
+				       samp_mt[j][i].x,
+				       samp_mt[j][i].y,
+				       samp_mt[j][i].pressure);
+                        }
                 }
         }
 
@@ -505,11 +497,11 @@ and call `ts_read_mt()` like so
 
 ## building tslib
 
-tslib is primarily developed for Linux. However you should be able to run
+tslib is cross-platform; you should be able to run
 `./configure && make` on a large variety of operating systems.
-You won't (yet) get the same experience for all systems though:
+The graphical test programs are not (yet) ported to all platforms though:
 
-#### libts and filter plugins (`module`s)
+#### libts and filter plugins (`module`)
 
 This is the hardware independent core part: _libts and all filter modules_ as
 _shared libraries_, build on the following operating systems.
@@ -528,23 +520,23 @@ This makes the thing usable in the read world because it accesses your device.
 See our configure.ac file for the currently possible configuration for your
 platform.
 
-* GNU / Linux - all
-* Android / Linux - all
-* FreeBSD - almost all
+* GNU / Linux - all (most importantly `input`)
+* Android / Linux - all (most importantly `input`)
+* FreeBSD - almost all (most importantly `input`)
 * GNU / Hurd - some
 * Haiku - some
 * Windows - non yet
 
 Writing your own plugin is quite easy, in case an existing one doesn't fit.
 
-#### test program and tools
+#### test programs and tools
 
 * GNU / Linux - all
 * Android / Linux - all (?)
 * FreeBSD - all (?)
 * GNU / Hurd - ts_print_mt, ts_print, ts_print_raw, ts_finddev
 * Haiku - ts_print_mt, ts_print, ts_print_raw, ts_finddev
-* Windows - ts_print.exe, ts_print_raw.exe
+* Windows - ts_print.exe, ts_print_raw.exe ts_print_mt.exe
 
 help porting missing programs!
 

@@ -21,9 +21,11 @@
  *
  *
  * ts_uinput daemon to generate (single- and multitouch) input events
- * taken from tslib multitouch samples.
+ * taken from tslib multitouch samples. It's a userspace evdev driver
+ * and thus Linux specific.
  */
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -35,6 +37,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <syslog.h>
+#include <dirent.h>
 #ifdef __FreeBSD__
 #include <dev/evdev/input.h>
 #include <dev/evdev/uinput.h>
@@ -68,6 +71,34 @@
 #define UI_GET_SYSNAME(len)     _IOC(_IOC_READ, UINPUT_IOCTL_BASE, 44, len)
 #endif
 
+#ifndef ABS_MT_SLOT /* < 2.6.36 kernel headers */
+# define ABS_MT_SLOT             0x2f    /* MT slot being modified */
+#endif
+#ifndef ABS_MT_POSITION_X /* < 2.6.30 kernel headers */
+# define ABS_MT_TOUCH_MAJOR      0x30    /* Major axis of touching ellipse */
+# define ABS_MT_TOUCH_MINOR      0x31    /* Minor axis (omit if circular) */
+# define ABS_MT_WIDTH_MAJOR      0x32    /* Major axis of approaching ellipse */
+# define ABS_MT_WIDTH_MINOR      0x33    /* Minor axis (omit if circular) */
+# define ABS_MT_ORIENTATION      0x34    /* Ellipse orientation */
+# define ABS_MT_POSITION_X       0x35    /* Center X touch position */
+# define ABS_MT_POSITION_Y       0x36    /* Center Y touch position */
+# define ABS_MT_TOOL_TYPE        0x37    /* Type of touching device */
+# define ABS_MT_BLOB_ID          0x38    /* Group a set of packets as a blob */
+# define ABS_MT_TRACKING_ID      0x39    /* Unique ID of initiated contact */
+#endif
+#ifndef ABS_MT_PRESSURE /* < 2.6.33 kernel headers */
+# define ABS_MT_PRESSURE         0x3a    /* Pressure on contact area */
+#endif
+#ifndef ABS_MT_DISTANCE /* < 2.6.38 kernel headers */
+# define ABS_MT_DISTANCE         0x3b    /* Contact hover distance */
+#endif
+#ifndef ABS_MT_TOOL_X /* < 3.6 kernel headers */
+# define ABS_MT_TOOL_X           0x3c    /* Center X tool position */
+# define ABS_MT_TOOL_Y           0x3d    /* Center Y tool position */
+#endif
+
+#define SYS_INPUT_DIR "/sys/devices/virtual/input/"
+
 struct data_t {
 	int fd_uinput;
 	int fd_input;
@@ -77,6 +108,7 @@ struct data_t {
 	char *fb_name;
 	struct tsdev *ts;
 	unsigned short verbose;
+	unsigned short verbose_daemon;
 	struct input_event *ev;
 	struct ts_sample_mt **s_array;
 	int slots;
@@ -102,7 +134,7 @@ static void help(struct data_t *data)
 	printf("  -s, --slots         override available concurrent touch contacts\n");
 	if (data->uinput_version > 3) {
 		printf("\n");
-		printf("Output: virtual device name under /sys/devices/virtual/input/\n");
+		printf("Output: virtual device name under " SYS_INPUT_DIR "\n");
 	}
 }
 
@@ -471,6 +503,35 @@ static void cleanup(struct data_t *data)
 		free(data->uinput_name);
 }
 
+/* directly from libevdev (LGPL) */
+static int is_event_device(const struct dirent *dent) {
+	return strncmp("event", dent->d_name, 5) == 0;
+}
+
+/* directly from libevdev (LGPL) */
+static char *fetch_device_node(const char *path)
+{
+	char *devnode = NULL;
+	struct dirent **namelist;
+	int ndev, i;
+
+	ndev = scandir(path, &namelist, is_event_device, alphasort);
+	if (ndev <= 0)
+		return NULL;
+
+	/* ndev should only ever be 1 */
+
+	for (i = 0; i < ndev; i++) {
+		if (!devnode && asprintf(&devnode, "/dev/input/%s", namelist[i]->d_name) == -1)
+			devnode = NULL;
+		free(namelist[i]);
+	}
+
+	free(namelist);
+
+	return devnode;
+}
+
 int main(int argc, char **argv)
 {
 	struct data_t data = {
@@ -486,6 +547,7 @@ int main(int argc, char **argv)
 		.slots = 1,
 		.uinput_version = 0,
 		.mt_type_a = 0,
+		.verbose_daemon = 0,
 	};
 	int i, j;
 	unsigned short run_daemon = 0;
@@ -548,6 +610,13 @@ int main(int argc, char **argv)
 			str[7] = c & 0xff;
 			perror(str);
 		}
+	}
+
+	/* if we run as a daemon, we don't print all debug output. we print
+	 * the input device node before returning. */
+	if (data.verbose && run_daemon) {
+		data.verbose = 0;
+		data.verbose_daemon = 1;
 	}
 
 	if (data.verbose) {
@@ -653,9 +722,16 @@ int main(int argc, char **argv)
 			int ret = ioctl(data.fd_uinput,
 					UI_GET_SYSNAME(sizeof(name)),
 					name);
-			if (ret >= 0)
-				printf("created virtual input device %s\n",
-				       name);
+			if (ret >= 0) {
+				char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
+				char *devnode;
+
+				snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
+				fprintf(stdout, "created %s\n", buf);
+				devnode = fetch_device_node(buf);
+				if (devnode)
+					fprintf(stdout, "%s\n", devnode);
+			}
 		} else {
 			fprintf(stderr, DEFAULT_UINPUT_NAME
 				": See the kernel log for the device number\n");
@@ -694,17 +770,31 @@ int main(int argc, char **argv)
 					UI_GET_SYSNAME(sizeof(name)),
 					name);
 			if (ret >= 0) {
-				fprintf(stdout, "%s\n", name);
+				if (data.verbose_daemon) {
+					char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
+					char *devnode;
+
+					snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
+					devnode = fetch_device_node(buf);
+					if (devnode)
+						fprintf(stdout, "%s\n", devnode);
+				} else {
+					fprintf(stdout, "%s\n", name);
+				}
+
 				fflush(stdout);
 			} else {
 				perror("ioctl UI_GET_SYSNAME");
+				goto out;
 			}
 		} else {
 			fprintf(stderr, DEFAULT_UINPUT_NAME
 			": See the kernel log for the device number\n");
 		}
-		if (daemon(0, 0) == -1)
+		if (daemon(0, 0) == -1) {
 			perror("error starting daemon");
+			goto out;
+		}
 	}
 
 	while (1) {
