@@ -57,12 +57,12 @@
 struct ts_verify {
 	struct tsdev *ts;
 	char *tsdevice;
-	unsigned short verbose;
+	uint8_t verbose;
 	FILE *tsconf;
 
 	struct ts_sample_mt **samp_mt;
-	unsigned short slots;
-	unsigned short nr;
+	int32_t slots;
+	uint8_t nr;
 	uint16_t read_mt_run_count;
 	uint16_t read_mt_fail_count;
 	uint16_t read_run_count;
@@ -73,12 +73,14 @@ struct ts_verify {
 
 static void usage(char **argv)
 {
-	printf("tslib " PACKAGE_VERSION "\n");
+	struct ts_lib_version_data *ver = ts_libversion();
+
+	printf("tslib %s\n", ver->package_version);
 	printf("\n");
 	printf("Usage: %s [--idev <device>] [--verbose]\n", argv[0]);
 }
 
-static int ts_verify_alloc_mt(struct ts_verify *data, int nr, short nonblocking)
+static int ts_verify_alloc_mt(struct ts_verify *data, int nr, int8_t nonblocking)
 {
 #ifdef TS_HAVE_EVDEV
 	struct input_absinfo slot;
@@ -135,13 +137,12 @@ static void ts_verify_free_mt(struct ts_verify *data)
 		if (data->samp_mt[i])
 			free(data->samp_mt[i]);
 	}
-	free(data->samp_mt);
 	ts_close(data->ts);
 }
 
 /* TEST ts_read_mt 1 */
 static int ts_verify_read_mt_1(struct ts_verify *data, int nr,
-				     int nonblocking, int raw)
+				     int8_t nonblocking, int raw)
 {
 	int i, j;
 	int ret;
@@ -280,7 +281,7 @@ static int ts_load_module_4_inv(struct ts_verify *data)
 	return ret;
 }
 
-void run_tests(struct ts_verify *data)
+static void run_tests(struct ts_verify *data)
 {
 	int32_t ret;
 
@@ -289,7 +290,7 @@ void run_tests(struct ts_verify *data)
 	/* ts_read() paramters(data, samples, nonblocking, raw) */
 	ret = ts_verify_read_mt_1(data, 1, 0, 0);
 	data->read_mt_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_mt (blocking) 1       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_mt (blocking) 1       ......   " RED "FAIL" RESET "\n");
@@ -298,7 +299,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 5, 0, 0);
 	data->read_mt_run_count++;
-	if (ret == 5) {
+	if (ret <= 5 && ret > 1) { /* > 1 according to expected from filters */
 		printf("TEST ts_read_mt (blocking) 5       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_mt (blocking) 5       ......   " RED "FAIL" RESET "\n");
@@ -307,7 +308,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 1, 1, 0);
 	data->read_mt_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_mt (nonblocking) 1    ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_mt (nonblocking) 1    ......   " RED "FAIL" RESET "\n");
@@ -316,7 +317,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 5, 1, 0);
 	data->read_mt_run_count++;
-	if (ret == 5) {
+	if (ret <= 5 && ret > 1) { /* > 1 */
 		printf("TEST ts_read_mt (nonblocking) 5    ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_mt (nonblocking) 5    ......   " RED "FAIL" RESET "\n");
@@ -325,7 +326,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 1, 0, 0);
 	data->read_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read    (blocking) 1       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read    (blocking) 1       ......   " RED "FAIL" RESET "\n");
@@ -334,7 +335,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 5, 0, 0);
 	data->read_run_count++;
-	if (ret == 5) {
+	if (ret <= 5 && ret > 1) { /* > 1 */
 		printf("TEST ts_read    (blocking) 5       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read    (blocking) 5       ......   " RED "FAIL" RESET "\n");
@@ -343,7 +344,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 1, 1, 0);
 	data->read_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read    (nonblocking) 1    ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read    (nonblocking) 1    ......   " RED "FAIL" RESET "\n");
@@ -355,7 +356,7 @@ void run_tests(struct ts_verify *data)
 	/* the same with the raw calls */
 	ret = ts_verify_read_mt_1(data, 1, 0, 1);
 	data->read_mt_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_raw_mt (blocking) 1   ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw_mt (blocking) 1   ......   " RED "FAIL" RESET "\n");
@@ -364,7 +365,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 5, 0, 1);
 	data->read_mt_run_count++;
-	if (ret == 5) {
+	if (ret <= 5 && ret > 1) { /* > 1 */
 		printf("TEST ts_read_raw_mt (blocking) 5   ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw_mt (blocking) 5   ......   " RED "FAIL" RESET "\n");
@@ -373,7 +374,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 1, 1, 1);
 	data->read_mt_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_raw_mt (nonblocking) 1......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw_mt (nonblocking) 1......   " RED "FAIL" RESET "\n");
@@ -382,7 +383,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_mt_1(data, 5, 1, 1);
 	data->read_mt_run_count++;
-	if (ret == 5) {
+	if (ret <= 5 && ret > 1) { /* > 1 */
 		printf("TEST ts_read_raw_mt (nonblocking) 5......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw_mt (nonblocking) 5......   " RED "FAIL" RESET "\n");
@@ -391,7 +392,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 1, 0, 1);
 	data->read_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_raw(blocking) 1       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw(blocking) 1       ......   " RED "FAIL" RESET "\n");
@@ -400,7 +401,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 5, 0, 1);
 	data->read_run_count++;
-	if (ret == 1) {
+	if (ret <= 5 && ret > 1) { /* > 1 */
 		printf("TEST ts_read_raw(blocking) 5       ......   " GREEN "PASS" RESET "\n");
 	} else {
 		printf("TEST ts_read_raw(blocking) 5       ......   " RED "FAIL" RESET "\n");
@@ -409,7 +410,7 @@ void run_tests(struct ts_verify *data)
 
 	ret = ts_verify_read_1(data, 1, 1, 1);
 	data->read_run_count++;
-	if (ret == 1) {
+	if (ret <= 1 && ret >= 0) {
 		printf("TEST ts_read_raw(nonblocking) 1    ......   " GREEN "PASS" RESET "\n");
 	}
 
@@ -448,6 +449,7 @@ int main(int argc, char **argv)
 		.nr_of_iterations = 6,
 		.tsconf = NULL,
 	};
+	struct ts_lib_version_data *ver = ts_libversion();
 
 	while (1) {
 		const struct option long_options[] = {
@@ -498,8 +500,18 @@ int main(int argc, char **argv)
 		return errno;
 
 
+	printf("tslib %s (library 0x%X)\n", ver->package_version, ver->version_num);
+
 	printf("======================================================\n");
 	printf("input_raw\n");
+
+	run_tests(&data);
+
+	data.tsconf = fopen(CONFFILE,"a+");
+	fprintf(data.tsconf, "module skip nhead=1 ntail=1\n");
+	fclose(data.tsconf);
+	printf("======================================================\n");
+	printf("input_raw -> skip\n");
 
 	run_tests(&data);
 
@@ -507,7 +519,7 @@ int main(int argc, char **argv)
 	fprintf(data.tsconf, "module pthres pmin=20\n");
 	fclose(data.tsconf);
 	printf("======================================================\n");
-	printf("input_raw -> pthres\n");
+	printf("input_raw -> skip -> pthres\n");
 
 	run_tests(&data);
 
@@ -515,7 +527,7 @@ int main(int argc, char **argv)
 	fprintf(data.tsconf, "module debounce drop_threshold=40\n");
 	fclose(data.tsconf);
 	printf("======================================================\n");
-	printf("input_raw -> pthres -> debounce\n");
+	printf("input_raw -> skip -> pthres -> debounce\n");
 
 	run_tests(&data);
 
@@ -523,7 +535,7 @@ int main(int argc, char **argv)
 	fprintf(data.tsconf, "module median depth=7\n");
 	fclose(data.tsconf);
 	printf("======================================================\n");
-	printf("input_raw -> pthres -> debounce -> median\n");
+	printf("input_raw -> skip -> pthres -> debounce -> median\n");
 
 	run_tests(&data);
 
@@ -531,7 +543,7 @@ int main(int argc, char **argv)
 	fprintf(data.tsconf, "module dejitter delta=100\n");
 	fclose(data.tsconf);
 	printf("======================================================\n");
-	printf("input_raw -> pthres -> debounce -> median -> dejitter\n");
+	printf("input_raw -> skip -> pthres -> debounce -> median -> dejitter\n");
 
 	run_tests(&data);
 
@@ -539,7 +551,7 @@ int main(int argc, char **argv)
 	fprintf(data.tsconf, "module linear\n");
 	fclose(data.tsconf);
 	printf("======================================================\n");
-	printf("input_raw -> pthres -> debounce -> median -> dejitter -> linear\n");
+	printf("input_raw -> skip -> pthres -> debounce -> median -> dejitter -> linear\n");
 
 	run_tests(&data);
 

@@ -121,12 +121,12 @@ struct tslib_input {
 	int	max_slots;
 	int	nr;
 	int	pen_down;
-	short	mt;
 	int	last_fd;
-	short	no_pressure;
-	short	type_a;
+	int8_t	mt;
+	int8_t	no_pressure;
+	int8_t	type_a;
 
-	unsigned int	special_device; /* broken device we work around, see below */
+	uint16_t	special_device; /* broken device we work around, see below */
 };
 
 #ifndef BUS_USB
@@ -202,7 +202,7 @@ static void set_pressure(struct tslib_input *i)
 
 	i->current_p = 255;
 
-	if (i->mt && i->buf) {
+	if (i->buf) {
 		for (j = 0; j < i->nr; j++) {
 			for (k = 0; k < i->max_slots; k++)
 				i->buf[j][k].pressure = 255;
@@ -251,8 +251,24 @@ static int check_fd(struct tslib_input *i)
 		}
 	}
 
+	if (ioctl(ts->fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
+		fprintf(stderr, "tslib: ioctl EVIOCGBIT error)\n");
+		return -1;
+	}
+
+
+	if (evbit[BIT_WORD(EV_SYN)] & BIT_MASK(EV_SYN))
+		i->using_syn = 1;
+
 	/* read device info and set special device nr */
 	get_special_device(i);
+
+	/* Remember whether we have a multitouch device. We need to know for ABS_X,
+	 * ABS_Y and ABS_PRESSURE data.
+	 */
+	if ((absbit[BIT_WORD(ABS_MT_POSITION_X)] & BIT_MASK(ABS_MT_POSITION_X)) &&
+	    (absbit[BIT_WORD(ABS_MT_POSITION_Y)] & BIT_MASK(ABS_MT_POSITION_Y)))
+		i->mt = 1;
 
 	/* Since some touchscreens (eg. infrared) physically can't measure pressure,
 	 * the input system doesn't report it on those. Tslib relies on pressure, thus
@@ -262,29 +278,12 @@ static int check_fd(struct tslib_input *i)
 	if (!(absbit[BIT_WORD(ABS_PRESSURE)] & BIT_MASK(ABS_PRESSURE)))
 		i->no_pressure = 1;
 
-	if ((ioctl(ts->fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) ||
-		!(keybit[BIT_WORD(BTN_TOUCH)] & BIT_MASK(BTN_TOUCH) ||
-		  keybit[BIT_WORD(BTN_LEFT)] & BIT_MASK(BTN_LEFT))) {
-		fprintf(stderr,
-			"tslib: Selected device is not a touchscreen (must support BTN_TOUCH or BTN_LEFT events)\n");
-		return -1;
+	if (i->mt) {
+		if (!(absbit[BIT_WORD(ABS_MT_PRESSURE)] & BIT_MASK(ABS_MT_PRESSURE)))
+			i->no_pressure = 1;
+		else
+			i->no_pressure = 0;
 	}
-
-	/* Remember whether we have a multitouch device. We need to know for ABS_X,
-	 * ABS_Y and ABS_PRESSURE data.
-	 */
-	if ((absbit[BIT_WORD(ABS_MT_POSITION_X)] & BIT_MASK(ABS_MT_POSITION_X)) &&
-	    (absbit[BIT_WORD(ABS_MT_POSITION_Y)] & BIT_MASK(ABS_MT_POSITION_Y)))
-		i->mt = 1;
-
-	/* remember if we have a device that doesn't support pressure. We have to
-	 * set pressure ourselves in this case.
-	 */
-	if (i->mt && !(absbit[BIT_WORD(ABS_MT_PRESSURE)] & BIT_MASK(ABS_MT_PRESSURE)))
-		i->no_pressure = 1;
-
-	if (evbit[BIT_WORD(EV_SYN)] & BIT_MASK(EV_SYN))
-		i->using_syn = 1;
 
 	if ((ioctl(ts->fd, EVIOCGBIT(EV_SYN, sizeof(synbit)), synbit)) == -1)
 		fprintf(stderr, "tslib: ioctl error\n");
@@ -293,6 +292,13 @@ static int check_fd(struct tslib_input *i)
 	if (i->mt && synbit[BIT_WORD(SYN_MT_REPORT)] & BIT_MASK(SYN_MT_REPORT) &&
 	    !(absbit[BIT_WORD(ABS_MT_SLOT)] & BIT_MASK(ABS_MT_SLOT)))
 		i->type_a = 1;
+
+	if (!(keybit[BIT_WORD(BTN_TOUCH)] & BIT_MASK(BTN_TOUCH) ||
+	      keybit[BIT_WORD(BTN_LEFT)] & BIT_MASK(BTN_LEFT)) && i->type_a != 1) {
+		fprintf(stderr,
+			"tslib: Selected device is not a touchscreen (missing BTN_TOUCH or BTN_LEFT)\n");
+		return -1;
+	}
 
 	if (i->grab_events == GRAB_EVENTS_WANTED) {
 		if (ioctl(ts->fd, EVIOCGRAB, (void *)1)) {
@@ -357,15 +363,30 @@ static int ts_input_read(struct tslib_module_info *inf,
 						samp->pressure = i->current_p;
 					}
 					samp->tv = ev.time;
-		#ifdef DEBUG
+			#ifdef DEBUG
 				fprintf(stderr,
 					"RAW---------------------> %d %d %d %ld.%ld\n",
 					samp->x, samp->y, samp->pressure,
 					(long)samp->tv.tv_sec,
 					(long)samp->tv.tv_usec);
-		#endif /* DEBUG */
+			#endif /* DEBUG */
 					samp++;
 					total++;
+				} else if (ev.code == SYN_MT_REPORT) {
+					if (!i->type_a)
+						break;
+
+					if (i->type_a == 1) { /* no data: pen-up */
+						pen_up = 1;
+
+					} else {
+						i->type_a = 1;
+					}
+			#ifdef DEBUG
+				} else if (ev.code == SYN_DROPPED) {
+					fprintf(stderr,
+						"INPUT-RAW: SYN_DROPPED\n");
+			#endif
 				}
 				break;
 			case EV_ABS:
@@ -409,9 +430,11 @@ static int ts_input_read(struct tslib_module_info *inf,
 						break;
 					case ABS_MT_POSITION_X:
 						i->current_x = ev.value;
+						i->type_a++;
 						break;
 					case ABS_MT_POSITION_Y:
 						i->current_y = ev.value;
+						i->type_a++;
 						break;
 					case ABS_PRESSURE:
 						i->current_p = ev.value;
@@ -537,7 +560,7 @@ static int ts_input_read_mt(struct tslib_module_info *inf,
 			return -ENOMEM;
 
 		for (j = 0; j < nr; j++) {
-			i->buf[j] = malloc(max_slots *
+			i->buf[j] = calloc(max_slots,
 					   sizeof(struct ts_sample_mt));
 			if (!i->buf[j])
 				return -ENOMEM;
@@ -639,8 +662,21 @@ static int ts_input_read_mt(struct tslib_module_info *inf,
 						total++;
 						break;
 					case SYN_MT_REPORT:
-						if (i->type_a && i->slot < (max_slots - 1))
+						if (!i->type_a)
+							break;
+
+						if (i->buf[total][i->slot].valid != 1) {
+							i->buf[total][i->slot].pressure = 0;
+							if (i->slot == 0) {
+								pen_up = 1;
+								break;
+							}
+
+						} else if (i->slot < (max_slots - 1)) {
 							i->slot++;
+							i->buf[total][i->slot].slot = i->slot;
+						}
+
 						break;
 				#ifdef DEBUG
 					case SYN_DROPPED:
@@ -755,9 +791,9 @@ static int ts_input_read_mt(struct tslib_module_info *inf,
 							i->buf[total][i->slot].valid = 1;
 						}
 						break;
-					case ABS_Z:
+					case ABS_X+2:
 						if (i->special_device == EGALAX_VERSION_112) {
-							/* this is ABS_X+2 wrongly used as ABS_X here */
+							/* this is ABS_Z wrongly used as ABS_X here */
 							if (i->mt && i->buf[total][i->slot].valid == 1)
 								break;
 
@@ -766,9 +802,9 @@ static int ts_input_read_mt(struct tslib_module_info *inf,
 							i->buf[total][i->slot].valid = 1;
 						}
 						break;
-					case ABS_RX:
+					case ABS_Y+2:
 						if (i->special_device == EGALAX_VERSION_112) {
-							/* this is ABS_Y+2 wrongly used as ABS_Y here */
+							/* this is ABS_RX wrongly used as ABS_Y here */
 							if (i->mt && i->buf[total][i->slot].valid == 1)
 								break;
 

@@ -21,41 +21,44 @@ Visit the [tslib website](http://tslib.org) for an overview of the project.
 * [filter modules](#filter-modules)
 * [the libts library](#the-libts-library)
 * [building tslib](#building-tslib)
+* [hardware support](#hardware-support)
 
 
 ## setup and configure tslib
 ### install tslib
-tslib should be usable on various operating systems, including GNU/Linux,
-Freebsd or Android/Linux. See [building tslib](#building-tslib) for details.
+tslib runs on various hardware architectures and operating systems, including GNU/Linux,
+FreeBSD or Android/Linux. See [building tslib](#building-tslib) for details.
 Apart from building the latest tarball release, running
 `./configure`, `make` and `make install`, tslib is available from the following
 distributors and their package management:
 * [Arch Linux](https://www.archlinux.org) and [Arch Linux ARM](https://archlinuxarm.org) - `pacman -S tslib`
 * [Buildroot](https://buildroot.org/) - `BR2_PACKAGE_TSLIB=y`
-* (Debian: [Looking for a sponsor](https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=854693) to include it)
+* [Debian](https://tracker.debian.org/pkg/tslib) - `apt-get install libts0 libts-bin libts-dev`
 
-### set up environment variables
+### environment variables
+You only need the variables when the defaults don't fit. Most of them should
+fit your needs on Linux though.
+
     TSLIB_TSDEVICE          TS device file name.
                             Default (inputapi):     /dev/input/ts
-                            /dev/input/touchscreen
-                            /dev/input/event0
+                                                    /dev/input/touchscreen
+                                                    /dev/input/event0
                             Default (non inputapi): /dev/touchscreen/ucb1x00
-    TSLIB_CALIBFILE         Calibration file.
-                            Default: ${sysconfdir}/pointercal
-    TSLIB_CONFFILE          Config file.
-                            Default: ${sysconfdir}/ts.conf
-    TSLIB_PLUGINDIR         Plugin directory.
-                            Default: ${datadir}/plugins
-    TSLIB_CONSOLEDEVICE     Console device.
-                            Default: /dev/tty
-    TSLIB_FBDEVICE          Framebuffer device.
-                            Default: /dev/fb0
 
-* On Debian, `TSLIB_PLUGINDIR` probably is for example `/usr/lib/x86_64-linux-gnu/ts0`.
-* Find your `/dev/input/eventX` touchscreen's event file and either
-  - Symlink `ln -s /dev/input/eventX /dev/input/ts` or
-  - `export TSLIB_TSDEVICE /dev/input/eventX`
-* If you are not using `/dev/fb0`, be sure to set `TSLIB_FBDEVICE`
+    TSLIB_CALIBFILE         Calibration file.
+                            Default:                ${sysconfdir}/pointercal
+
+    TSLIB_CONFFILE          Config file.
+                            Default:                ${sysconfdir}/ts.conf
+
+    TSLIB_PLUGINDIR         Plugin directory.
+                            Default:                ${datadir}/plugins
+
+    TSLIB_CONSOLEDEVICE     Console device.
+                            Default:                /dev/tty
+
+    TSLIB_FBDEVICE          Framebuffer device.
+                            Default:                /dev/fb0
 
 ### configure tslib
 This is just an example `/etc/ts.conf` file. Touch samples flow from top to
@@ -74,13 +77,13 @@ parameters.
 With this configuration file, we end up with the following data flow
 through the library:
 
-    driver --> raw read --> median  --> dejitter --> linear --> application
+    driver --> raw read --> median  --> dejitter --> linear --> application (using ts_read_mt())
                module       module      module       module
 
 ### calibrate the touch screen
 Calibration is done by the `linear` plugin, which uses it's own config file
 `/etc/pointercal`. Don't edit this file manually. It is created by the
-`ts_calibrate` program:
+[`ts_calibrate`](https://manpages.debian.org/unstable/libts0/ts_calibrate.1.en.html) program:
 
     # ts_calibrate
 
@@ -89,55 +92,98 @@ where is appears, as accurate as possible.
 
 ### test the filtered input behaviour
 You may quickly test the touch behaviour that results from the configured
-filters, using `ts_test_mt`:
+filters, using [`ts_test_mt`](https://manpages.debian.org/unstable/libts0/ts_test_mt.1.en.html):
 
     # ts_test_mt
 
-### use the filtered result in your system
-You need a tool using tslib'd API and provide it to your input system. There are
-various ways to do so on various systems. We only describe one way for Linux
-here - using tslib's included userspace input evdev driver `ts_uinput`:
+### use the filtered result in your system (ts_uinput method)
+You need a tool using tslib's API that glues tslib's touch samples to your
+input system. There are various ways to do so on various systems. We only
+describe one way for Linux here - using tslib's included userspace input
+evdev driver `ts_uinput`:
 
-    # ts_uinput -d
+    # ts_uinput -d -v
 
-`-d` makes the program return and run as a daemon in the background. Inside of
-`/dev/input/` there now is a new input event device, which provides your
-configured input. You can even use a script like `tools/ts_uinput_start.sh` to
-start the ts_uinput daemon and create a defined `/dev/input/ts_uinput` symlink.
+`-d` makes the program return and run as a daemon in the background. `-v` makes
+it print the new `/dev/input/eventX` device node before returning.
 
-In this case, for Qt5 for example you'd probably set something like this:
+You can use *evdev* drivers now. In this case, for Qt5 for example you'd
+probably set something like this:
 
-    QT_QPA_GENERIC_PLUGINS=evdevtouch:/dev/input/ts_uinput
-    QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/ts_uinput:rotate=0
+    QT_QPA_GENERIC_PLUGINS=evdevtouch:/dev/input/eventX
+    QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/eventX:rotate=0
 
 For X11 you'd probably edit your `xorg.conf` `Section "InputDevice"` for your
 touchscreen to have
 
-    Option "Device" "/dev/input/ts_uinput"
+    Option "Device" "/dev/input/eventX"
 
 and so on. Please see your system's documentation on how to use a specific
 evdev input device.
 
-Remember to set your environment and configuration for ts_uinput, just like you
-did for ts_calibrate or ts_test_mt.
+Remember to set your environment and configuration for `ts_uinput`, just like you
+did for `ts_calibrate` or `ts_test_mt`.
 
 Let's recap the data flow here:
 
-    driver --> raw read --> filter --> (...)   --> ts_uinput  --> evdev read
-               module       module     module(s)   application    application
+    driver --> raw read --> filter --> filter(s) --> ts_uinput (ts_read_mt())  --> libevdev read  --> GUI app
+               module       module     module(s)     daemon                        e.g. in libinput
+
+#### symlink to /dev/input/ts_uinput
+In order to know *what* enumerated input device file is created by `ts_uinput`,
+you can, among other thing:
+
+* use the included `tools/ts_uinput_start.sh` script that starts
+  `ts_uinput -d -v` and creates the symlink `/dev/input/ts_uinput` for you, or
+
+* if you're using *udev and systemd*, create the following udev rule, for
+  example `/etc/udev/rules.d/98-touchscreen.rules`:
+
+      SUBSYSTEM=="input", KERNEL=="event[0-9]*", ATTRS{phys}=="input/ts", SYMLINK+="input/ts", TAG+="systemd"
+      SUBSYSTEM=="input", KERNEL=="event[0-9]*", ATTRS{name}=="ts_uinput", SYMLINK+="input/ts_uinput"
+
+  where for `ATTRS{phys}=="input/ts"`, choose anything that matches your real
+  touchscreen device, in case don't already have a /dev/input/ts symlink.
+
+  then create any file containing the environment or tslib, like `/etc/ts.env`
+
+      TSLIB_TSDEVICE=/dev/input/ts
+      TSLIB_CALIBFILE=/etc/pointercal
+      TSLIB_CONFFILE=/etc/ts.conf
+      TSLIB_PLUGINDIR=/usr/lib/ts
+      TSLIB_FBDEVICE=/dev/fb0
+
+  and create a systemd service file, like `/usr/lib/systemd/system/ts_uinput.service`
+
+      [Unit]
+      Description=touchscreen input
+      Wants=dev-input-ts_raw.device
+      After=dev-input-ts_raw.device
+
+      [Service]
+      Type=oneshot
+      EnvironmentFile=/etc/ts.env
+      ExecStart=/bin/sh -c 'exec /usr/bin/ts_uinput &> /var/log/ts_uinput.log'
+
+      [Install]
+      WantedBy=multi-user.target
+
+  and
+
+      #systemctl enable ts_uinput
+
+  will enable it permanently.
 
 
 ## filter modules
 
 ### module: linear
-
-#### Description:
   Linear scaling - calibration - module, primerily used for conversion of touch
   screen co-ordinates to screen co-ordinates. It applies the corrections as
-  recorded and saved by the `ts_calibrate` tool. It's the only module that reads
+  recorded and saved by the [`ts_calibrate`](https://manpages.debian.org/unstable/libts0/ts_calibrate.1.en.html) tool. It's the only module that reads
   a configuration file.
 
-#### Parameters:
+Parameters:
 * `xyswap`
 
 	interchange the X and Y co-ordinates -- no longer used or needed
@@ -155,10 +201,9 @@ Let's recap the data flow here:
 
 
 ### module: median
-
-#### Description:
-  Similar to what a variance filter does, the median filter suppresses
-  spikes in the gesture. For some theory, see [Wikipedia](https://en.wikipedia.org/wiki/Median_filter)
+  The median filter reduces noise in the samples' coordinate values. It is
+  able to filter undesired single large jumps in the signal. For some
+  theory, see [Wikipedia](https://en.wikipedia.org/wiki/Median_filter)
 
 Parameters:
 * `depth`
@@ -167,13 +212,11 @@ Parameters:
 
 
 ### module: pthres
-
-#### Description:
   Pressure threshold filter. Given a release is always pressure 0 and a
   press is always >= 1, this discards samples below / above the specified
   pressure threshold.
 
-#### Parameters:
+Parameters:
 * `pmin`
 
 	Minimum pressure value for a sample to be valid.
@@ -183,16 +226,13 @@ Parameters:
 
 
 ### module: iir
-
-#### Description:
-  Infinite impulse response filter. Similar to dejitter, this is a smoothing
-  filter to remove low-level noise. There is a trade-off between noise removal
+  Infinite impulse response filter. This is a smoothing filter to remove
+  low-level noise. There is a trade-off between noise removal
   (smoothing) and responsiveness. The parameters N and D specify the level of
   smoothing in the form of a fraction (N/D).
 
   [Wikipedia](https://en.wikipedia.org/wiki/Infinite_impulse_response) has some
-  general theory.
-
+  theory.
 
 Parameters:
 * `N`
@@ -204,15 +244,13 @@ Parameters:
 
 
 ### module: dejitter
-
-#### Description:
   Removes jitter on the X and Y co-ordinates. This is achieved by applying a
   weighted smoothing filter. The latest samples have most weight; earlier
   samples have less weight. This allows to achieve 1:1 input->output rate. See
-  [Wikipedia](https://en.wikipedia.org/wiki/Jitter#Mitigation) for some general
+  [Wikipedia](https://en.wikipedia.org/wiki/Jitter#Mitigation) for some
   theory.
 
-#### Parameters:
+Parameters:
 * `delta`
 
 	Squared distance between two samples ((X2-X1)^2 + (Y2-Y1)^2) that
@@ -223,13 +261,11 @@ Parameters:
 
 
 ### module: debounce
-
-#### Description:
   Simple debounce mechanism that drops input events for the specified time
   after a touch gesture stopped. [Wikipedia](https://en.wikipedia.org/wiki/Switch#Contact_bounce)
   has more theory.
 
-#### Parameters:
+Parameters:
 * `drop_threshold`
 
 	drop events up to this number of milliseconds after the last
@@ -237,12 +273,8 @@ Parameters:
 
 
 ### module: skip
-
-#### Description:
   Skip nhead samples after press and ntail samples before release. This
   should help if for the device the first or last samples are unreliable.
-
-  Note that it is still **experimental for multitouch**.
 
 Parameters:
 * `nhead`
@@ -254,22 +286,16 @@ Parameters:
 
 
 ### module:	variance
-
-#### Description:
   Variance filter. Tries to do it's best in order to filter out random noise
   coming from touchscreen ADC's. This is achieved by limiting the sample
   movement speed to some value (e.g. the pen is not supposed to move quicker
   than some threshold).
 
-  This is a 'greedy' filter, e.g. it gives less samples on output than
-  receives on input. It can cause problems on capacitive touchscreens that
-  already apply such a filter.
-
   There is **no multitouch** support for this filter (yet). `ts_read_mt()` will
-  only read one slot when this filter is used. You can try using the median
+  limit your input to one slot when this filter is used. Try using the median
   filter instead.
 
-#### Parameters:
+Parameters:
 * `delta`
 
 	Set the squared distance in touchscreen units between previous and
@@ -320,33 +346,30 @@ while you are free to play with the parameter values.
 
 ## the libts library
 ### the libts API
+The API is documented in our man pages in the doc directory.
 Check out our tests directory for examples how to use it.
 
-`ts_open()`  
-`ts_config()`  
-`ts_setup()`  
-`ts_close()`  
+`ts_libversion()`  
+[`ts_open()`](https://manpages.debian.org/unstable/libts0/ts_open.3.en.html)  
+[`ts_config()`](https://manpages.debian.org/unstable/libts0/ts_config.3.en.html)  
+[`ts_setup()`](https://manpages.debian.org/unstable/libts0/ts_setup.3.en.html)  
+[`ts_close()`](https://manpages.debian.org/unstable/libts0/ts_close.3.en.html)  
 `ts_reconfig()`  
 `ts_option()`  
 `ts_fd()`  
 `ts_load_module()`  
-`ts_read()`  
-`ts_read_raw()`  
-`ts_read_mt()`  
-`ts_reat_raw_mt()`  
+[`ts_read()`](https://manpages.debian.org/unstable/libts0/ts_read.3.en.html)  
+[`ts_read_raw()`](https://manpages.debian.org/unstable/libts0/ts_read.3.en.html)  
+[`ts_read_mt()`](https://manpages.debian.org/unstable/libts0/ts_read.3.en.html)  
+[`ts_reat_raw_mt()`](https://manpages.debian.org/unstable/libts0/ts_read.3.en.html)  
 
-The API is documented in our man pages in the doc directory.
-Possibly there will be distributors who provide them online, like
-[Debian had done for tslib-1.0](https://manpages.debian.org/wheezy/libts-bin/index.html).
-As soon as there are up-to-date html pages hosted somewhere, we'll link the
-functions above to it.
 
 ### ABI - Application Binary Interface
 
 [Wikipedia](https://en.wikipedia.org/wiki/Application_binary_interface) has
 background information.
 
-#### Soname versions
+#### libts Soname versions
 Usually, and every time until now, libts does not break the ABI and your
 application can continue using libts after upgrading. Specifically this is
 indicated by the libts library version's major number, which should always stay
@@ -355,17 +378,21 @@ only if we break backwards compatibility. The second or third minor version will
 increase with releases. In the following example
 
 
-    libts.so -> libts.so.0.3.1
-    libts.so.0 -> libts.so.0.3.1
-    libts.so.0.3.1
+    libts.so -> libts.so.0.7.0
+    libts.so.0 -> libts.so.0.7.0
+    libts.so.0.7.0
 
 
 use `libts.so` for using tslib unconditionally and `libts.so.0` to make sure
 your current application never breaks.
 
+If a release includes changes like added features, the second number is
+incremented and the third is set to zero. If a release includes mostly just
+bugfixes, only the third number is incremented.
+
 #### tslib package version
-Officially, a tslib tarball version number doesn't tell you anything about it's
-backwards compatibility.
+A tslib tarball version number doesn't tell you anything about it's backwards
+compatibility.
 
 ### dependencies
 
@@ -379,30 +406,37 @@ backwards compatibility.
 
 ### libts users
 
-* ts_uinput - userspace event device driver for the tslib-filtered samples. part of tslib (tools/ts_uinput.c)
-* [xf86-input-tslib](http://public.pengutronix.de/software/xf86-input-tslib/) - **outdated** direct tslib input plugin for X
-* [qtslib](https://github.com/qt/qtbase/tree/dev/src/platformsupport/input/tslib) - **outdated** Qt5 qtbase tslib plugin
+* [ts_uinput](#use-the-filtered-result-in-your-system) - userspace event device driver for the tslib-filtered samples. Shipped as part of tslib.
+* [xf86-input-tslib](https://github.com/merge/xf86-input-tslib) - direct tslib input driver for X.org
+* [qtslib](https://github.com/qt/qtbase/tree/dev/src/platformsupport/input/tslib) - direct Qt5 tslib input plugin
 
 ### using libts
+If you want to support tslib < 1.2, while still support multitouch and all
+recent versions of tslib, you'd do something like this:
+
+    #include <tslib.h>
+
+    #ifndef TSLIB_VERSION_MT
+            /* ts_read() as before (due to old tslib) */
+    #else
+            /* new ts_setup() and ret = ts_read_mt() */
+            if (ret == -ENOSYS)
+                    /* ts_read() as before (due to user config) */
+    #endif
+
 This is a complete example program, similar to `ts_print_mt.c`:
 
     #include <stdio.h>
+    #include <stdint.h>
     #include <stdlib.h>
     #include <fcntl.h>
-    #include <sys/ioctl.h>
-    #include <sys/mman.h>
     #include <sys/time.h>
-    #include <getopt.h>
-    #include <errno.h>
     #include <unistd.h>
 
-    #ifdef __FreeBSD__
-    #include <dev/evdev/input.h>
-    #else
-    #include <linux/input.h>
-    #endif
+    #include <tslib.h>
 
-    #include "tslib.h"
+    #define SLOTS 5
+    #define SAMPLES 1
 
     int main(int argc, char **argv)
     {
@@ -410,57 +444,54 @@ This is a complete example program, similar to `ts_print_mt.c`:
         char *tsdevice = NULL;
         struct ts_sample_mt **samp_mt = NULL;
         struct input_absinfo slot;
-        unsigned short max_slots = 1;
-        int ret, i;
+        int32_t max_slots = 1;
+        unsigned short read_samples = 1;
+        int ret, i, j;
 
         ts = ts_setup(tsdevice, 0);
         if (!ts) {
                 perror("ts_setup");
-                return errno;
+                return -1;
         }
 
-        if (ioctl(ts_fd(ts), EVIOCGABS(ABS_MT_SLOT), &slot) < 0) {
-                perror("ioctl EVIOGABS");
-                ts_close(ts);
-                return errno;
-        }
+        max_slots = SLOTS;
+        read_samples = SAMPLES;
 
-        max_slots = slot.maximum + 1 - slot.minimum;
-
-        samp_mt = malloc(sizeof(struct ts_sample_mt *));
+        samp_mt = malloc(read_samples * sizeof(struct ts_sample_mt *));
         if (!samp_mt) {
                 ts_close(ts);
                 return -ENOMEM;
         }
-        samp_mt[0] = calloc(max_slots, sizeof(struct ts_sample_mt));
-        if (!samp_mt[0]) {
-                free(samp_mt);
-                ts_close(ts);
-                return -ENOMEM;
+        for (i = 0; i < read_samples; i++) {
+                samp_mt[i] = calloc(max_slots, sizeof(struct ts_sample_mt));
+                if (!samp_mt[i]) {
+                        free(samp_mt);
+                        ts_close(ts);
+                        return -ENOMEM;
+                }
         }
 
         while (1) {
-                ret = ts_read_mt(ts, samp_mt, max_slots, 1);
+                ret = ts_read_mt(ts, samp_mt, max_slots, read_samples);
                 if (ret < 0) {
                         perror("ts_read_mt");
                         ts_close(ts);
                         exit(1);
                 }
 
-                if (ret != 1)
-                        continue;
+                for (j = 0; j < ret; j++) {
+                	for (i = 0; i < max_slots; i++) {
+				if (samp_mt[j][i].valid != 1)
+					continue;
 
-                for (i = 0; i < max_slots; i++) {
-                        if (samp_mt[0][i].valid != 1)
-                                continue;
-
-                        printf("%ld.%06ld: (slot %d) %6d %6d %6d\n",
-                               samp_mt[0][i].tv.tv_sec,
-                               samp_mt[0][i].tv.tv_usec,
-                               samp_mt[0][i].slot,
-                               samp_mt[0][i].x,
-                               samp_mt[0][i].y,
-                               samp_mt[0][i].pressure);
+				printf("%ld.%06ld: (slot %d) %6d %6d %6d\n",
+				       samp_mt[j][i].tv.tv_sec,
+				       samp_mt[j][i].tv.tv_usec,
+				       samp_mt[j][i].slot,
+				       samp_mt[j][i].x,
+				       samp_mt[j][i].y,
+				       samp_mt[j][i].pressure);
+                        }
                 }
         }
 
@@ -485,6 +516,8 @@ and call `ts_read_mt()` like so
 ### Symbols in Versions
 |Name | Introduced|
 | --- | --- |
+|`TSLIB_VERSION_MT` | 1.10 |
+|`ts_libversion` | 1.10 |
 |`ts_close` | 1.0 |
 |`ts_config` | 1.0 |
 |`ts_reconfig` | 1.3 |
@@ -505,11 +538,11 @@ and call `ts_read_mt()` like so
 
 ## building tslib
 
-tslib is primarily developed for Linux. However you should be able to run
+tslib is cross-platform; you should be able to run
 `./configure && make` on a large variety of operating systems.
-You won't (yet) get the same experience for all systems though:
+The graphical test programs are not (yet) ported to all platforms though:
 
-#### libts and filter plugins (`module`s)
+#### libts and filter plugins (`module`)
 
 This is the hardware independent core part: _libts and all filter modules_ as
 _shared libraries_, build on the following operating systems.
@@ -525,29 +558,46 @@ _shared libraries_, build on the following operating systems.
 #### input plugins (`module_raw`)
 
 This makes the thing usable in the read world because it accesses your device.
-See our configure.ac file for the currently possible configuration for your
-platform.
+See our configure.ac or [hardware support](#hardware-support) for the currently
+possible configuration for your platform.
 
-* GNU / Linux - all
-* Android / Linux - all
-* FreeBSD - almost all
-* GNU / Hurd - some
-* Haiku - some
+* GNU / Linux - all (most importantly `input`)
+* Android / Linux - all (most importantly `input`)
+* FreeBSD - almost all (most importantly `input`)
+* GNU / Hurd - some, see [hardware support](#hardware-support)
+* Haiku - some, see [hardware support](#hardware-support)
 * Windows - non yet
 
 Writing your own plugin is quite easy, in case an existing one doesn't fit.
 
-#### test program and tools
+#### test programs and tools
 
 * GNU / Linux - all
 * Android / Linux - all (?)
 * FreeBSD - all (?)
 * GNU / Hurd - ts_print_mt, ts_print, ts_print_raw, ts_finddev
 * Haiku - ts_print_mt, ts_print, ts_print_raw, ts_finddev
-* Windows - ts_print.exe, ts_print_raw.exe
+* Windows - ts_print.exe, ts_print_raw.exe ts_print_mt.exe
 
-help porting missing programs!
+#### download binaries?
+For GNU/Linux all architectures are _very_ well covered, thanks to Debian or Arch
+Linux or others.
+
+If you're lucky, you'll find some unofficial testing builds for Windows or other
+platforms [here](https://martinkepplinger.com/tslib/packages/).
+
+Please help porting missing programs!
 
 #### libts user plugin
 This can be _any third party program_, using tslib's API. For Linux, we include
 `ts_uinput`, but Qt, X11 or anything else can use tslib's API.
+
+## hardware support
+The [ts.conf man page](https://manpages.debian.org/unstable/libts0/ts.conf.5.en.html)
+has details on the available `module_raw` drivers. Not all of them are listed in the
+default `etc/ts.conf` config file. Hardware access modules other than the generic
+ones like `input` for Linux are to be seen as workarounds for missing generic drivers.
+If you use one of those, please `./configure --enable-...` them explicitely.
+
+And of course we'd happily have a generic `input-windows` or similar module for
+other platforms.

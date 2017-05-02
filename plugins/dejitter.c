@@ -193,14 +193,14 @@ static int dejitter_read_mt(struct tslib_module_info *info,
 	int ret;
 	int i, j;
 
+	if (!info->next->ops->read_mt)
+		return -ENOSYS;
+
 	ret = info->next->ops->read_mt(info->next, samp, max_slots, nr);
 	if (ret < 0)
 		return ret;
 
 #ifdef DEBUG
-	if (ret == 0)
-		fprintf(stderr, "DEJITTER: couldn't read data\n");
-
 	printf("DEJITTER: read %d samples (mem: %d nr x %d slots)\n",
 	       ret, nr, max_slots);
 #endif

@@ -21,11 +21,13 @@
 
 #include "tslib-private.h"
 
-static const struct {
+struct tslib_module_desc {
 	const char *name;
 	tslib_module_init mod_init;
-} tslib_modules[] = {
-	/* XXX: sort alphabetically and use a binary search? */
+};
+
+static const struct tslib_module_desc tslib_modules[] = {
+	/* sort alphabetically */
 #ifdef TSLIB_STATIC_ARCTIC2_MODULE
 	{ "arctic2", arctic2_mod_init },
 #endif
@@ -38,17 +40,29 @@ static const struct {
 #ifdef TSLIB_CY8MRLN_PALMPRE_MODULE
 	{ "cy8mrln_palmpre", cy8mrln_palmpre_mod_init },
 #endif
+#ifdef TSLIB_STATIC_DEBOUNCE_MODULE
+	{ "debounce", debounce_mod_init },
+#endif
 #ifdef TSLIB_STATIC_DEJITTER_MODULE
 	{ "dejitter", dejitter_mod_init },
+#endif
+#ifdef TSLIB_STATIC_DMC_MODULE
+	{ "dmc", dmc_mod_init },
+#endif
+#ifdef TSLIB_STATIC_DMC_DUS3000_MODULE
+	{ "dmc_dus3000", dmc_dus3000_mod_init },
 #endif
 #ifdef TSLIB_STATIC_H3600_MODULE
 	{ "h3600", h3600_mod_init },
 #endif
-#ifdef TSLIB_STATIC_INPUT_MODULE
-	{ "input", input_mod_init },
-#endif
 #ifdef TSLIB_STATIC_GALAX_MODULE
 	{ "galax", galax_mod_init },
+#endif
+#ifdef TSLIB_STATIC_IIR_MODULE
+	{ "iir", iir_mod_init },
+#endif
+#ifdef TSLIB_STATIC_INPUT_MODULE
+	{ "input", input_mod_init },
 #endif
 #ifdef TSLIB_STATIC_LINEAR_MODULE
 	{ "linear", linear_mod_init },
@@ -62,6 +76,9 @@ static const struct {
 #ifdef TSLIB_STATIC_PTHRES_MODULE
 	{ "pthres", pthres_mod_init },
 #endif
+#ifdef TSLIB_STATIC_SKIP_MODULE
+	{ "skip", skip_mod_init },
+#endif
 #ifdef TSLIB_STATIC_TATUNG_MODULE
 	{ "tatung", tatung_mod_init },
 #endif
@@ -70,15 +87,6 @@ static const struct {
 #endif
 #ifdef TSLIB_STATIC_VARIANCE_MODULE
 	{ "variance", variance_mod_init },
-#endif
-#ifdef TSLIB_STATIC_DEBOUNCE_MODULE
-	{ "debounce", debounce_mod_init },
-#endif
-#ifdef TSLIB_STATIC_SKIP_MODULE
-	{ "skip", skip_mod_init },
-#endif
-#ifdef TSLIB_STATIC_IIR_MODULE
-	{ "iir", iir_mod_init },
 #endif
 };
 
@@ -89,9 +97,9 @@ static struct tslib_module_info *__ts_load_module_static(struct tsdev *ts,
 							 const char *params)
 {
 	struct tslib_module_info *info = NULL;
-	unsigned int i;
+	int i;
 
-	for (i = 0; i < countof(tslib_modules); i++) {
+	for (i = 0; i < (int)countof(tslib_modules); i++) {
 		if (!strcmp(tslib_modules[i].name, module)) {
 			info = tslib_modules[i].mod_init(ts, params);
 #ifdef DEBUG
@@ -193,7 +201,10 @@ static int __ts_load_module(struct tsdev *ts, const char *module,
 		fprintf(stderr, "Can't attach %s\n", module);
 #endif
 		handle = info->handle;
-		info->ops->fini(info);
+
+		if (info->ops->fini)
+			info->ops->fini(info);
+
 		if (handle)
 			dlclose(handle);
 	}
